@@ -20,7 +20,7 @@ import (
 // ============================================================================
 
 const (
-	buffReentryGuard    = 3 * time.Second          // Short guard to prevent rapid-fire calls (BUG FIX: was 30s, blocked rebuff after area transitions)
+	buffReentryGuard    = 3 * time.Second          // Short guard to prevent rapid-fire calls
 	stateWaitTimeout    = 1000 * time.Millisecond   // Max time to wait for buff state after cast
 	stateCheckInterval  = 50 * time.Millisecond     // Poll interval for state check
 	maxCastRetries      = 3                         // Max retries if buff doesn't apply
@@ -46,16 +46,23 @@ func BuffIfRequired() {
 		return
 	}
 
-	// BUG FIX: Relaxed monster proximity check.
-	// Previously: 2 monsters within 15 units would abort buffing entirely.
-	// A Nova Sorc teleports into packs constantly, so Energy Shield (her
-	// primary survival buff) was being skipped most of the time.
-	// Now: only abort if truly overwhelmed (8+ monsters at melee range).
+	// Monster proximity check: abort buffing if too many enemies are nearby.
+	// Builds that teleport into packs (Nova, Lightning Sorc) use relaxed
+	// thresholds so survival buffs like Energy Shield aren't perpetually skipped.
+	// All other builds keep the original conservative check.
+	proximityRadius := 15
+	proximityLimit := 2
+	class := ctx.CharacterCfg.Character.Class
+	if isClassType(class, "nova", "lightsorc") {
+		proximityRadius = 8
+		proximityLimit = 8
+	}
+
 	closeMonsters := 0
 	for _, m := range ctx.Data.Monsters {
-		if ctx.PathFinder.DistanceFromMe(m.Position) < 8 {
+		if ctx.PathFinder.DistanceFromMe(m.Position) < proximityRadius {
 			closeMonsters++
-			if closeMonsters >= 8 {
+			if closeMonsters >= proximityLimit {
 				return
 			}
 		}
@@ -89,18 +96,10 @@ func Buff() {
 		buffMutex.Unlock()
 	}()
 
-	// BUG FIX: Reduced cooldown from 30s to 3s (re-entry guard only).
-	// The 30s cooldown was the PRIMARY cause of Energy Shield not being recast
-	// after area transitions. D2R drops all buffs on area change, but if the
-	// player transitioned within 30s of the last buff, this check blocked rebuffing.
+	// Skip buffing in town or if we just buffed (re-entry guard).
 	if ctx.Data.PlayerUnit.Area.IsTown() || time.Since(ctx.LastBuffAt) < buffReentryGuard {
 		return
 	}
-
-	// BUG FIX: REMOVED early `ctx.LastBuffAt = time.Now()` that was here.
-	// Previously, LastBuffAt was stamped BEFORE buffs were applied. If anything
-	// failed or partially completed, the player was locked out for the full
-	// cooldown period. Now we stamp it AFTER successful completion (see bottom).
 
 	// SAVE current right skill BEFORE buffing - will restore after
 	originalRightSkill := ctx.Data.PlayerUnit.RightSkill
@@ -145,7 +144,7 @@ func Buff() {
 	castPostCTABuffs(isBarbarian)
 	ensurePrimaryWeapon()
 
-	// BUG FIX: Stamp LastBuffAt AFTER successful completion, not before.
+	// Stamp LastBuffAt after successful completion so partial failures don't block retries.
 	ctx.LastBuffAt = time.Now()
 
 	ctx.Logger.Debug("Buff sequence completed")
@@ -156,10 +155,7 @@ func IsRebuffRequired() bool {
 	ctx := context.Get()
 	ctx.SetLastAction("IsRebuffRequired")
 
-	// BUG FIX: Removed cooldown check from here.
-	// Previously this had: `time.Since(ctx.LastBuffAt) < buffCooldown` which
-	// returned false even when Energy Shield was missing. This function should
-	// ONLY check actual buff states — the re-entry guard belongs in Buff() alone.
+	// Only check actual buff states here; the re-entry guard belongs in Buff().
 	if ctx.Data.PlayerUnit.Area.IsTown() {
 		return false
 	}
