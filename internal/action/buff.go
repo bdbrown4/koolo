@@ -145,8 +145,10 @@ func Buff() {
 	castPostCTABuffs(isBarbarian)
 	ensurePrimaryWeapon()
 
-	// BUG FIX: Stamp LastBuffAt AFTER successful completion, not before.
-	ctx.LastBuffAt = time.Now()
+	// Stamp LastBuffAt only if all required buffs are currently active.
+	if !IsRebuffRequired() {
+		ctx.LastBuffAt = time.Now()
+	}
 
 	ctx.Logger.Debug("Buff sequence completed")
 }
