@@ -144,6 +144,9 @@ func Buff() {
 	castPostCTABuffs(isBarbarian)
 	ensurePrimaryWeapon()
 	allBuffsActive := !IsRebuffRequired()
+	// Restore last action to "Buff" so monitoring and debugging see the main action,
+	// not the internal IsRebuffRequired check.
+	ctx.SetLastAction("Buff")
 
 	// Stamp last buff attempt time unconditionally so the re-entry guard always advances,
 	// even if some buffs could not be applied.
