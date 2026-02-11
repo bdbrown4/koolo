@@ -143,12 +143,15 @@ func Buff() {
 	// --- Phase 3: Post-CTA Class Buffs ---
 	castPostCTABuffs(isBarbarian)
 	ensurePrimaryWeapon()
+	allBuffsActive := !IsRebuffRequired()
 
-	// Stamp LastBuffAt only if all required buffs are currently active.
-	if !IsRebuffRequired() {
-		ctx.LastBuffAt = time.Now()
-	}
-	ctx.Logger.Debug("Buff sequence completed")
+	// Stamp last buff attempt time unconditionally so the re-entry guard always advances,
+	// even if some buffs could not be applied.
+	ctx.LastBuffAt = time.Now()
+
+	ctx.Logger.Debug("Buff sequence completed",
+		slog.Bool("allBuffsActive", allBuffsActive),
+	)
 }
 
 // IsRebuffRequired checks if any buff has expired and needs reapplication.
